@@ -3,5 +3,5 @@
 
 The doc directory contains the report or presentation files. It can have subfolders. 
 
-Please try to use GitHub & BitBucket HTML Preview to view the html file. (https://htmlpreview.github.io/)
-Or you can just download .Rmd file to view the report
+You can just chose to open the html file through your github desktop.
+(it seems like I can not review my html file now )
