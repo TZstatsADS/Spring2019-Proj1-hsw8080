@@ -1,17 +1,21 @@
 ---
 title: "What made you happy today?"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
 Shengwei Huang 
 
-## About the dataset
+# About the dataset
 
 Many things can make one's heart smile with joy. HappyDB(https://rit-public.github.io/HappyDB/) is "a corpus of 100,000 crowd-sourced happy moments". The goal of this project is to look deeper into the causes that make us happy. Natural language processing and text mining are natural tools to derive interesting findings in this collection of happy moments.
 
-## Part(0) Load and check packages 
-```{r}
 
-packages.used <- c("plyr","tm","tidytext","tidyverse","DT","wordcloud","scales","sentimentr","dplyr","ggplot2","topicmodels")  
+
+```{r,include=FALSE}
+# Part(0) Load and check packages 
+packages.used <- c("plyr","tm","tidytext","tidyverse","DT","wordcloud","wordcloud2","scales","sentimentr","dplyr","ggplot2","gplots","topicmodels","NLP","RColorBrewer")  
 
 # check whether we have dont have any of these packages 
 packages.need <- setdiff(packages.used, intersect(installed.packages()[,1], packages.used))
@@ -25,20 +29,271 @@ library(tidytext)
 library(tidyverse)
 library(DT)
 library(wordcloud)
+library(wordcloud2)
 library(scales)
+library(gplots)
 library(ggplot2)
 library(sentimentr)
 library(ngram)
 library(dplyr)
 library(topicmodels)
+library(NLP)
+library(RColorBrewer)
 ```
 
-## Part (1) Data Preparation 
 
-```{r}
+
+```{r,include=FALSE}
+# Part (1) Data Preparation 
 # Here I will load two dataset: (1) the processed_moemnt.csv (2) demographic.csv
-processed_moment <- read.csv("../output/processed_moments.csv")
+processed_moment <- read.csv("../output/processed_moments.csv",stringsAsFactors=F)
 demographic <- read.csv("../data/demographic.csv")
+hm <- inner_join(processed_moment, demographic, by = "wid")
+#df.hm <- data.frame(dataset$reflection_period,dataset$num_sentence,dataset$ground_truth_category,#dataset$predicted_category,dataset$age,dataset$country,dataset$gender,dataset$marital,dataset$par#enthood)
+
+```
+
+```{r,include=FALSE}
+# create the words bank for this dataset and we calculate the frequency for each word
+bag_of_words <- hm %>% unnest_tokens(word, text)
+word_freq <- bag_of_words %>% count(word,sort = T)
+# create sub-bags and counts for each feature
+# (1) gender
+bag_of_male_words <- bag_of_words[bag_of_words$gender=="m",]
+word_freq_male <- bag_of_male_words %>% count(word,sort = T)
+
+bag_of_female_words <- bag_of_words[bag_of_words$gender=="f",]
+word_freq_female <- bag_of_female_words %>% count(word,sort = T)
+# (2) marital status  
+bag_of_married_words <- bag_of_words[bag_of_words$marital=="married",]
+word_freq_married    <- bag_of_married_words %>% count(word,sort = T)
+bag_of_single_words  <- bag_of_words[bag_of_words$marital=="single",] 
+word_freq_single     <- bag_of_single_words %>% count(word,sort = T)
+bag_of_divorced_words <-bag_of_words[bag_of_words$marital=="divorced",]
+word_freq_divorced     <- bag_of_divorced_words %>% count(word,sort = T)
+bag_of_separated_words <- bag_of_words[bag_of_words$marital=="separated",]
+word_freq_separated    <- bag_of_separated_words %>% count(word,sort = T)
+# (3) parenthood 
+bag_of_parent_words <- bag_of_words[bag_of_words$parenthood=="y",]
+word_freq_parent    <- bag_of_parent_words %>% count(word,sort = T)
+bag_of_nparent_words <- bag_of_words[bag_of_words$parenthood=="n",]
+word_freq_nparent    <- bag_of_nparent_words %>% count(word,sort = T)
+# (4) category 
+bag_of_affection_words <- bag_of_words[bag_of_words$predicted_category=="affection",]
+word_freq_affection <- bag_of_affection_words %>% count(word,sort =T)
+bag_of_achieve_words<- bag_of_words[bag_of_words$predicted_category=="achievement",]
+word_freq_achieve <- bag_of_achieve_words %>% count(word,sort =T)
+bag_of_enjoy_words <- bag_of_words[bag_of_words$predicted_category=="enjoy_the_moment",]
+word_freq_enjoy <- bag_of_enjoy_words %>% count(word,sort =T)
+bag_of_bond_words <- bag_of_words[bag_of_words$predicted_category=="bonding",]
+word_freq_bond <- bag_of_bond_words %>% count(word,sort =T)
+bag_of_leisure_words <- bag_of_words[bag_of_words$predicted_category=="leisure",]  
+word_freq_leisure <- bag_of_leisure_words %>% count(word,sort =T)
+bag_of_nature_words <- bag_of_words[bag_of_words$predicted_category=="nature",] 
+word_freq_nature <-bag_of_nature_words %>% count(word,sort =T)
+bag_of_excercise_words <- bag_of_words[bag_of_words$predicted_category=="exercise",] 
+word_freq_excercise <- bag_of_excercise_words %>% count(word,sort =T) 
+```
+# What really "connects" us to happy moments?
+I accidentally came across a passage which tells people how to make most of you life happy moments. It mentions top 10 ways to achieve these happy moments:
+
+1. Tell friends, "The greatest thing happened to me!"
+
+2. Mentally Instagram it
+
+3. Do a touchdown dance
+
+4. Close your eyes at the concert
+
+5. Say, "I'm normally at work right now"
+
+6. Be Zen and don't think anything at all
+
+7. Shout, "Hooray!"
+
+8. Remember: This will end
+
+9. Say, "I am so lucky to have this in my life"
+
+10. Do not say, "I should be working right now"
+
+The author thinks that happy moments may usually happen when you share your day with your friends, family, or even just someone on your instagram. Sometimes happy momemnts may also happy when you just keeping relaxing yourself or encouraging yourself. Thus I am going to look deep inside that:
+1. Which kind of words may appear in different happy category?
+2. For different people(male,female,single,married,ect.), to them which are the "happy" words they frequent used? 
+
+# Exploratory data analysis
+Let's first have an overview of our text data. 
+
+```{r,echo = FALSE}
+# the overview of the most frequently appeared words
+wordcloud(words = word_freq$word, word_freq$n, min.freq = 1,max.words=120, random.order=FALSE, rot.per=0.1,colors=brewer.pal(6,"Set2"))
 ```
 
 
+```{r,echo=FALSE}
+# bar plot
+barplot(word_freq[1:10,]$n, las = 2, names.arg = word_freq[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "Top 10 happy word",xlab = "Frequency",horiz = T)
+```
+We can see that the words rank into Top 10 words that appear most frequently in happy moments are:
+
+TOP1. FRIEND  
+
+TOP2. DAY 
+
+TOP3. TIME 
+
+TOP4. FAMILY
+
+TOP5. WATCHED 
+
+TOP6. HOME 
+
+TOP7. PLAYED 
+
+TOP8. FEEL 
+
+TOP9. FINALLY 
+
+TOP10. FOUND 
+
+Now, let's divide all happy moments into 7 different category which are: affection, achievement, enjoy the moment, bonding, excerices, nature and leisure. We are going to look at the top 10 frequnt used words under these 7 categories:
+
+```{r,echo = FALSE}
+par(mfrow=c(2, 4))
+
+barplot(word_freq_affection[1:10,]$n, las = 2, names.arg = word_freq_affection[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "Affection",xlab = "Frequency",horiz = T)
+barplot(word_freq_achieve[1:10,]$n, las = 2, names.arg = word_freq_achieve[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "Achieve",xlab = "Frequency",horiz =T)
+barplot(word_freq_bond[1:10,]$n, las = 2, names.arg = word_freq_bond[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "bond",xlab = "Frequency",horiz =T)
+barplot(word_freq_enjoy[1:10,]$n, las = 2, names.arg = word_freq_enjoy[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "enjoy the moment",xlab = "Frequency",horiz =T)
+barplot(word_freq_excercise[1:10,]$n, las = 2, names.arg = word_freq_excercise[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "excercise",xlab = "Frequency",horiz =T)
+barplot(word_freq_nature[1:10,]$n, las = 2, names.arg = word_freq_nature[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "nature",xlab = "Frequency",horiz =T)
+barplot(word_freq_leisure[1:10,]$n, las = 2, names.arg = word_freq_leisure[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "leisure",xlab = "Frequency",horiz =T)
+
+```
+Let's see that the Top.1 "happy" word "friend" actually dominates the bonding category. Also, we can see that the Top.2 "happy" word "day" actually appears in two category affection and enjoy the moemnt. However, the words "gym","weather","job" which ranks the top of their corresponding category did not show up in the Top 10 "happy" words list. Which also tells us that people may make their happy moments more frequently when they are with their friends or talk about their friends. That's also provide a direct proof for the passage that one way to make your life happy is to meet friends or share with your friends. 
+
+Now,moving on to the next part of question: Different groups of people with different happy moements, are there any obvious trend for different groups?
+
+Let's compare Male vs Female first: 
+```{r,echo=FALSE}
+par(mfrow=c(1,2))
+wordcloud(words = word_freq_male$word, word_freq_male$n, min.freq = 1,max.words=50, random.order=FALSE, rot.per=0.1,colors=brewer.pal(6,"Blues"),scale=c(1,1))
+
+wordcloud(words = word_freq_female$word, word_freq_female$n, min.freq = 1,max.words=50, random.order=FALSE, rot.per=0.1,colors=brewer.pal(6,"Reds"),scale=c(1,1))
+```
+The blue wordcloud is for male and the red one is for female. Just briefly look at them, we can fidn the top 3 "happy" word are the same for both male and female: 1.friend 2.day 3.time which is also corresponding to the top 3 for all individuals. 
+
+However, male groups differs from the female groups when we continue to comapre. For male group, we can see other "happy" word contains: "wife","played","game","daughter","car". For female group we can find words:"baby","dinner","husband","found","mom",ect. Thus male groups tend to make happy moment while they playing games, staying with their wife or talk about cars while female groups tend to make happy moments when they are talking about baby, stay with their husband or cooking dinners for her family.
+
+
+
+Next, let's compare people that have already become parents and those who are not.
+```{r,echo=FALSE}
+par(mfrow=c(1, 2))
+
+barplot(word_freq_parent[1:10,]$n, las = 2, names.arg = word_freq_parent[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "Parenthood - Y",xlab = "Frequency",horiz = T)
+barplot(word_freq_nparent[1:10,]$n, las = 2, names.arg = word_freq_nparent[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "Parenthood - N",xlab = "Frequency",horiz =T)
+```
+We can see the obvious difference beteween people with/without parenthood. For those who already formed their own family, they tend to make more happy moments with their family member such as: son,daughter, husband, wife. However,for the other group, people more frequently have happy moment when they spending time with friends, palying some sports or games or watching movies. That's significant difference between parenthood and without parenthood. 
+
+
+
+Then, we are going to look at the people with different marital status.
+```{r,echo=FALSE}
+par(mfrow=c(2, 2))
+
+barplot(word_freq_married[1:10,]$n, las = 2, names.arg = word_freq_married[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "married",xlab = "Frequency",horiz = T)
+barplot(word_freq_single[1:10,]$n, las = 2, names.arg = word_freq_single[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "single",xlab = "Frequency",horiz =T)
+barplot(word_freq_divorced[1:10,]$n, las = 2, names.arg = word_freq_divorced[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "divorced",xlab = "Frequency",horiz =T)
+barplot(word_freq_separated[1:10,]$n, las = 2, names.arg = word_freq_separated[1:10,]$word,col = brewer.pal(n = 10, name = "Set3"), main = "separated",xlab = "Frequency",horiz =T)
+```
+The results are pretty similar to the parenthood group, especially for people got married and people that are still single. For married people, they tend to produce the happy moment with their family just like people with parenthood. For single people, they are pretty having fun with their friends or playing games to achieve their own happy life. However, for divorced people and separated people, they are somehow similar. They will all make their happy moment when mentioned about "son","daughter" even thought they mostly feel happy with their friends. 
+
+
+#  Topic Modeling 
+```{r,echo=FALSE}
+# create the doc and term matrix
+corpus <- VCorpus(VectorSource(hm$text)) 
+dtm <- DocumentTermMatrix(corpus)
+rowTotals <- slam::row_sums(dtm)
+dtm <- dtm[rowTotals > 0, ]
+# Now we are going to perfrom LDA 
+```
+
+
+```{r,echo=FALSE}
+# Set parameters for Gibbs sampling
+burnin <- 800
+iter <- 500
+thin <- 100
+seed <-list(2019,2,60,100001,765)
+nstart <- 5
+best <- TRUE
+# Number of topics
+k <- 8
+ldaOut <-LDA(dtm, k, method="Gibbs", control=list(nstart=nstart,seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
+# write out the result
+ldaOut.topics <- as.matrix(topics(ldaOut))
+table(c(1:k, ldaOut.topics)) # Total number per each topic
+```
+
+```{r,echo=FALSE}
+# Now we are going to check top 10 words appeared in each topic 
+ldaOut.terms <- as.matrix(terms(ldaOut,10))
+#probabilities associated with each topic assignment
+topicProbabilities <- as.data.frame(ldaOut@gamma)
+
+terms.beta=ldaOut@beta
+terms.beta=scale(terms.beta)
+topics.terms=NULL
+for(i in 1:k){
+  topics.terms=rbind(topics.terms, ldaOut@terms[order(terms.beta[i,], decreasing = TRUE)[1:7]])
+}
+ldaOut.terms
+```
+
+
+```{r,echo=FALSE}
+# let's distributed these topics to the original dataset and perform the analysis
+topics <- c("career","morning","schoolwork","family party","traveling","after work","weekend","emotion")
+hm <- hm[rowTotals,]
+hm$ldatopic <- as.vector(topics)
+hm$ldahash <- topics[ldaOut.topics]
+colnames(topicProbabilities) <- topics
+hm_lda=cbind(hm, topicProbabilities)
+```
+
+I briefly checked these 8 topics and personally assigned them(from Topic 1 to Topic 8):career,morning,schoolwork,family party,traveling,after work,holiday,emotion. And now, let's look at the relationship between these new topics and different group of people. 
+
+```{r,echo=FALSE,warning=FALSE}
+par(mar=c(1,1,1,1))
+topic.summary=tbl_df(hm_lda[!is.na(hm_lda$parenthood),])%>%select(parenthood, career:emotion)%>%
+group_by(parenthood)%>%summarise_all(funs(mean))%>%as.data.frame()
+
+heatmap.2(as.matrix(topic.summary[,-1]), Rowv = F,scale = "row", key=F, na.rm = T,col = bluered(100), labRow = c("parent","nonpaerenthood"),cexRow = 0.9, cexCol = 0.9, margins = c(8, 8),trace = "none", density.info = "none")
+```
+
+First, we can see from the heatmap, that for non-parenthood people they tend to make happy moments during weekend,after work, career, schoolwork,traveling, morning; but for parenthood people, we can see they would find happiness in emotion,traveling,morning,family party.
+
+Then we check these topics vs gender:
+```{r,echo=FALSE,warning=FALSE}
+par(mar=c(1,1,1,1))
+topic.summary.gender=tbl_df(hm_lda[!is.na(hm_lda$gender),])%>%select(gender, career:emotion)%>%
+group_by(gender)%>%summarise_all(funs(mean))%>%as.data.frame()
+
+heatmap.2(as.matrix(topic.summary.gender[,-1]), Rowv = F,scale = "row", key=F, na.rm = T,col = bluered(100), labRow = c("male","female"),cexRow = 0.9, cexCol = 0.9, margins = c(8, 8),trace = "none", density.info = "none")
+```
+As the graph shows that male tends to make happy moments in morning, weekend,afterwork,schoolwork,career,traveling but female tend to find happniess in emotion, morning and family party. 
+
+
+
+
+# Summary :
+
+1. After topic modeling, we can more directly find that people in different groups tends to have different "happy" words and they frequency that they make happy moments is different. 
+
+2. We can see that male and femalr group are pretty like coffee and milk. They are complimental group but they have the same top 3 happy words: friend, day, time
+
+3. When we check the parenthood group and non-parenthood group, the difference between them are more obvious. People with parenthood would produce most of their happy with their family however people with nonparenthood would feel happy with their friends or playing games/sports. 
+
+4. Marrital group are pretty similar to the Parehood/Non-parenthood group. Maybe their are some correlation between them, such as parenthood are most likely married people and non-parenthood are most likely single people. But for divorced and separated group of people, in general they are similar because they will achieve most of their happy moments with their friends. But they will achieve happy moments with their sons or daughters.
